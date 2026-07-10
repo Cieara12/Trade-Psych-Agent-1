@@ -1,0 +1,103 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  sessions   DebriefSession[]
+  intentions Intention[]
+  patterns   Pattern[]
+}
+
+// One debrief per trading session/day.
+model DebriefSession {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+
+  // The 3-4 prompts.
+  tradedWhat String
+  feltHow    String
+  redoMoment String
+
+  // Self-reported outcome, used to watch completion-by-outcome (the
+  // red-day-dropout risk the co-CEO flagged).
+  outcome Outcome
+
+  // Intention carried in from the prior session, and whether it was kept.
+  checkedIntentionId String?
+  checkedIntention    Intention? @relation("IntentionCheckIn", fields: [checkedIntentionId], references: [id])
+  intentionKept       Boolean?
+
+  // The intention set at the end of this session, for next time.
+  nextIntention Intention?      @relation("IntentionOrigin")
+  patterns      Pattern[]
+}
+
+enum Outcome {
+  GREEN
+  RED
+  FLAT
+}
+
+model Intention {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+
+  text String
+
+  // The session that produced this intention.
+  originSessionId String          @unique
+  originSession   DebriefSession  @relation("IntentionOrigin", fields: [originSessionId], references: [id])
+
+  // The later session(s) that checked in on it.
+  checkIns DebriefSession[] @relation("IntentionCheckIn")
+}
+
+enum PatternType {
+  CONTRADICTION
+  REPEATED_BEHAVIOR
+  EMOTIONAL_TRIGGER
+}
+
+enum PatternStatus {
+  SURFACED
+  CONFIRMED
+  DISMISSED
+}
+
+// A candidate pattern the agent has noticed. Surfaced to the trader at
+// most once per session, and never re-raised once dismissed.
+model Pattern {
+  id        String      @id @default(cuid())
+  userId    String
+  user      User        @relation(fields: [userId], references: [id])
+  createdAt DateTime    @default(now())
+
+  type   PatternType
+  status PatternStatus @default(SURFACED)
+
+  // The trader's own prior words this pattern is anchored in, so callouts
+  // quote rather than interpret.
+  sourceQuote String
+  description String
+
+  // The session in which this pattern was surfaced to the trader.
+  surfacedInSessionId String
+  surfacedInSession   DebriefSession @relation(fields: [surfacedInSessionId], references: [id])
+}
